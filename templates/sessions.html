@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Sessions — Smart Farm Protection{% endblock %}
+
+{% block content %}
+<!-- ========== PAGE HEADING ========== -->
+<h1 class="page-title">📊 Detection Sessions</h1>
+
+<!-- ========== SESSION CARDS ========== -->
+<div class="session-grid" id="session-cards">
+    <div class="loading-spinner"><div class="spinner"></div> Loading sessions…</div>
+</div>
+
+<!-- ========== BAR CHART — Events Per Day ========== -->
+<div class="chart-container">
+    <h3>📅 Detection Events Per Day (Last 7 Days)</h3>
+    <div class="chart-wrap">
+        <canvas id="sessionsChart"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/**
+ * Sessions Page Script
+ * - Fetches /api/sessions and renders session cards
+ * - Fetches /api/events and builds a 7-day bar chart
+ */
+
+// ── Helpers ────────────────────────────────────────────────────
+function fmtDateTime(ts) {
+    if (!ts) return '—';
+    return new Date(ts * 1000).toLocaleString();
+}
+
+function fmtDuration(seconds) {
+    if (!seconds || seconds <= 0) return '< 1 s';
+    if (seconds < 60) return Math.round(seconds) + ' s';
+    if (seconds < 3600) return Math.round(seconds / 60) + ' min';
+    return (seconds / 3600).toFixed(1) + ' hr';
+}
+
+// ── Render session cards ───────────────────────────────────────
+function renderSessions(sessions) {
+    const container = document.getElementById('session-cards');
+    if (!sessions || sessions.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-secondary);padding:1rem;">No detection sessions recorded yet.</div>';
+        return;
+    }
+
+    container.innerHTML = sessions.map(s => `
+        <div class="session-card">
+            <div class="session-card__header">
+                <span class="session-card__id">Session #${s.session_id}</span>
+                <span class="session-card__duration">${fmtDuration(s.duration_s)}</span>
+            </div>
+            <div class="session-card__row">
+                <span>Start</span>
+                <span>${fmtDateTime(s.start)}</span>
+            </div>
+            <div class="session-card__row">
+                <span>End</span>
+                <span>${fmtDateTime(s.end)}</span>
+            </div>
+            <div class="session-card__row">
+                <span>Readings</span>
+                <span>${s.event_count || 0}</span>
+            </div>
+            <div class="session-card__row">
+                <span>Peak Temp</span>
+                <span>${s.peak_temp != null ? s.peak_temp.toFixed(1) + ' °C' : '—'}</span>
+            </div>
+            <div class="session-card__row">
+                <span>Peak Sound</span>
+                <span>${s.peak_sound || '—'}</span>
+            </div>
+            <div class="session-card__row">
+                <span>Peak Distance</span>
+                <span>${s.peak_distance != null ? s.peak_distance.toFixed(1) + ' cm' : '—'}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+// ── Chart.js — Detection events per day (last 7 days) ─────────
+const ctx = document.getElementById('sessionsChart').getContext('2d');
+const barChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: [],
+        datasets: [{
+            label: 'Detection Events',
+            data: [],
+            backgroundColor: 'rgba(6,182,212,.55)',
+            borderColor: '#06b6d4',
+            borderWidth: 1,
+            borderRadius: 6,
+        }],
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+        },
+        scales: {
+            x: { ticks: { color: '#64748b' }, grid: { color: 'rgba(30,42,74,.4)' } },
+            y: {
+                beginAtZero: true,
+                ticks: { color: '#64748b', stepSize: 1 },
+                grid: { color: 'rgba(30,42,74,.4)' },
+            },
+        },
+    },
+});
+
+function buildDailyChart(events) {
+    // Build a map of date → count for last 7 days
+    const dayMap = {};
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const key = d.toISOString().slice(0, 10);
+        dayMap[key] = 0;
+    }
+
+    (events || []).forEach(ev => {
+        if (!ev.timestamp) return;
+        const key = new Date(ev.timestamp * 1000).toISOString().slice(0, 10);
+        if (key in dayMap) dayMap[key]++;
+    });
+
+    barChart.data.labels = Object.keys(dayMap);
+    barChart.data.datasets[0].data = Object.values(dayMap);
+    barChart.update();
+}
+
+// ── Fetch data ─────────────────────────────────────────────────
+fetch('/api/sessions')
+    .then(r => r.json())
+    .then(renderSessions)
+    .catch(() => {
+        document.getElementById('session-cards').innerHTML =
+            '<div style="color:var(--accent-red);padding:1rem;">⚠ Failed to load sessions</div>';
+    });
+
+fetch('/api/events')
+    .then(r => r.json())
+    .then(buildDailyChart)
+    .catch(() => console.error('Could not load events for chart'));
+</script>
+{% endblock %}

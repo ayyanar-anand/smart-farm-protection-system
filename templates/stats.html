@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Analytics — Smart Farm Protection{% endblock %}
+
+{% block content %}
+<!-- ========== PAGE HEADING ========== -->
+<h1 class="page-title">📈 Sensor Analytics</h1>
+
+<!-- ========== DETECTION COUNTERS ========== -->
+<div class="counter-grid">
+    <div class="counter-card">
+        <div class="counter-card__value" id="cnt-today">—</div>
+        <div class="counter-card__label">Detections Today</div>
+    </div>
+    <div class="counter-card">
+        <div class="counter-card__value" id="cnt-week">—</div>
+        <div class="counter-card__label">This Week</div>
+    </div>
+    <div class="counter-card">
+        <div class="counter-card__value" id="cnt-all">—</div>
+        <div class="counter-card__label">All Time</div>
+    </div>
+</div>
+
+<!-- ========== AVERAGE SENSOR VALUES (24 h) ========== -->
+<h2 class="page-title" style="font-size:1.05rem;">🌡️ Average Sensor Values (Last 24 h)</h2>
+<div class="avg-grid">
+    <div class="avg-card">
+        <div class="avg-card__value" id="avg-temp">—</div>
+        <div class="avg-card__label">Temperature °C</div>
+    </div>
+    <div class="avg-card">
+        <div class="avg-card__value" id="avg-sound">—</div>
+        <div class="avg-card__label">Sound Level</div>
+    </div>
+    <div class="avg-card">
+        <div class="avg-card__value" id="avg-vib">—</div>
+        <div class="avg-card__label">Vibration</div>
+    </div>
+    <div class="avg-card">
+        <div class="avg-card__value" id="avg-dist">—</div>
+        <div class="avg-card__label">Distance (cm)</div>
+    </div>
+</div>
+
+<!-- ========== CHARTS: PIE + LINE ========== -->
+<div class="charts-row">
+    <!-- Pie: which sensors triggered most -->
+    <div class="chart-container">
+        <h3>🥧 Sensor Trigger Frequency</h3>
+        <div class="chart-wrap">
+            <canvas id="pieChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Line: detections per hour today -->
+    <div class="chart-container">
+        <h3>⏰ Detections Per Hour (Today)</h3>
+        <div class="chart-wrap">
+            <canvas id="hourlyChart"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/**
+ * Analytics Page Script
+ * - Fetches /api/stats for aggregated data
+ * - Renders counters, averages, pie chart, and hourly line chart
+ */
+
+// ── Chart.js — Pie: Sensor Trigger Frequency ──────────────────
+const pieCtx = document.getElementById('pieChart').getContext('2d');
+const pieChart = new Chart(pieCtx, {
+    type: 'doughnut',
+    data: {
+        labels: ['PIR', 'Sound', 'Vibration', 'Distance', 'Thermal'],
+        datasets: [{
+            data: [0, 0, 0, 0, 0],
+            backgroundColor: [
+                '#7c3aed',  /* purple */
+                '#d97706',  /* amber */
+                '#06b6d4',  /* cyan */
+                '#16a34a',  /* green */
+                '#dc2626',  /* red */
+            ],
+            borderColor: '#0f1535',
+            borderWidth: 3,
+        }],
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: { color: '#94a3b8', font: { size: 11 }, padding: 14 },
+            },
+        },
+    },
+});
+
+// ── Chart.js — Line: Detections per hour today ─────────────────
+const hourlyCtx = document.getElementById('hourlyChart').getContext('2d');
+const hourLabels = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0') + ':00');
+const hourlyChart = new Chart(hourlyCtx, {
+    type: 'line',
+    data: {
+        labels: hourLabels,
+        datasets: [{
+            label: 'Detections',
+            data: new Array(24).fill(0),
+            borderColor: '#06b6d4',
+            backgroundColor: 'rgba(6,182,212,.12)',
+            tension: .3,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#06b6d4',
+            fill: true,
+        }],
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+        },
+        scales: {
+            x: { ticks: { color: '#64748b', maxTicksLimit: 12 }, grid: { color: 'rgba(30,42,74,.4)' } },
+            y: { beginAtZero: true, ticks: { color: '#64748b', stepSize: 1 }, grid: { color: 'rgba(30,42,74,.4)' } },
+        },
+    },
+});
+
+// ── Fetch /api/stats and populate everything ───────────────────
+fetch('/api/stats')
+    .then(r => r.json())
+    .then(data => {
+        // Counters
+        document.getElementById('cnt-today').textContent = data.today ?? '—';
+        document.getElementById('cnt-week').textContent  = data.week  ?? '—';
+        document.getElementById('cnt-all').textContent   = data.all_time ?? '—';
+
+        // Averages
+        document.getElementById('avg-temp').textContent  = data.avg_temp  ?? '—';
+        document.getElementById('avg-sound').textContent = data.avg_sound ?? '—';
+        document.getElementById('avg-vib').textContent   = data.avg_vib   ?? '—';
+        document.getElementById('avg-dist').textContent  = data.avg_distance ?? '—';
+
+        // Pie chart
+        const st = data.sensor_triggers || {};
+        pieChart.data.datasets[0].data = [
+            st.pir || 0,
+            st.sound || 0,
+            st.vibration || 0,
+            st.distance || 0,
+            st.thermal || 0,
+        ];
+        pieChart.update();
+
+        // Hourly line chart
+        if (data.hourly && data.hourly.length === 24) {
+            hourlyChart.data.datasets[0].data = data.hourly;
+            hourlyChart.update();
+        }
+    })
+    .catch(err => console.error('Stats fetch error:', err));
+</script>
+{% endblock %}

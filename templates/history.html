@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}History — Smart Farm Protection{% endblock %}
+
+{% block content %}
+<!-- ========== PAGE HEADING ========== -->
+<h1 class="page-title">📋 Detection Event History</h1>
+
+<!-- ========== DATE RANGE FILTER ========== -->
+<div class="filter-bar">
+    <label for="start-date">From:</label>
+    <input type="date" id="start-date">
+    <label for="end-date">To:</label>
+    <input type="date" id="end-date">
+    <button class="btn btn--primary" id="btn-filter">🔍 Filter</button>
+    <button class="btn btn--secondary" id="btn-clear">Clear</button>
+</div>
+
+<!-- ========== HISTORY TABLE ========== -->
+<div class="table-container">
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>PIR</th>
+                <th>Sound</th>
+                <th>Vibration</th>
+                <th>Distance (cm)</th>
+                <th>Temp (°C)</th>
+                <th>Triggered</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="history-body">
+            <tr><td colspan="8" class="loading-spinner"><div class="spinner"></div> Loading…</td></tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/**
+ * History Page Script
+ * - Fetches data from /api/history (with optional date range)
+ * - Renders rows into a styled table
+ */
+
+// ── Helper: format timestamp ───────────────────────────────────
+function fmtDateTime(ts) {
+    if (!ts) return '—';
+    return new Date(ts * 1000).toLocaleString();
+}
+
+// ── Render table rows ──────────────────────────────────────────
+function renderRows(records) {
+    const tbody = document.getElementById('history-body');
+    if (!records || records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text-secondary)">No records found</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = records.map(r => {
+        const active = r.system_active;
+        const badge  = active
+            ? '<span class="badge badge--active">ACTIVE</span>'
+            : '<span class="badge badge--clear">CLEAR</span>';
+
+        const pirBadge = r.pir
+            ? '<span class="text-red fw-bold">YES</span>'
+            : '<span class="text-green">NO</span>';
+
+        const soundDetected = r.sound_detected
+            ? '<span class="text-red">' + (r.sound_value || 0) + '</span>'
+            : (r.sound_value || 0);
+
+        const vibDetected = r.vib_detected
+            ? '<span class="text-red">' + (r.vib_value || 0) + '</span>'
+            : (r.vib_value || 0);
+
+        return `<tr>
+            <td>${fmtDateTime(r.timestamp)}</td>
+            <td>${pirBadge}</td>
+            <td>${soundDetected}</td>
+            <td>${vibDetected}</td>
+            <td>${r.distance_cm != null ? r.distance_cm.toFixed(1) : '—'}</td>
+            <td>${r.temperature_c != null ? r.temperature_c.toFixed(1) : '—'}</td>
+            <td>${r.sensors_triggered || 0} / 5</td>
+            <td>${badge}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ── Fetch history data ─────────────────────────────────────────
+function fetchHistory() {
+    const start = document.getElementById('start-date').value;
+    const end   = document.getElementById('end-date').value;
+
+    let url = '/api/history';
+    const params = [];
+    if (start) params.push('start=' + start);
+    if (end)   params.push('end=' + end);
+    if (params.length) url += '?' + params.join('&');
+
+    document.getElementById('history-body').innerHTML =
+        '<tr><td colspan="8" class="loading-spinner"><div class="spinner"></div> Loading…</td></tr>';
+
+    fetch(url)
+        .then(r => r.json())
+        .then(renderRows)
+        .catch(() => {
+            document.getElementById('history-body').innerHTML =
+                '<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--accent-red)">⚠ Failed to load data</td></tr>';
+        });
+}
+
+// ── Event listeners ────────────────────────────────────────────
+document.getElementById('btn-filter').addEventListener('click', fetchHistory);
+document.getElementById('btn-clear').addEventListener('click', function () {
+    document.getElementById('start-date').value = '';
+    document.getElementById('end-date').value = '';
+    fetchHistory();
+});
+
+// ── Load on page open ──────────────────────────────────────────
+fetchHistory();
+</script>
+{% endblock %}

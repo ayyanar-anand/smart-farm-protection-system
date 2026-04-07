@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Smart Farm Protection{% endblock %}
+
+{% block content %}
+<!-- ========== PAGE HEADING ========== -->
+<h1 class="page-title">🖥️ Live Dashboard</h1>
+
+<!-- ========== 6 STAT CARDS ========== -->
+<div class="stat-grid">
+    <!-- PIR Motion -->
+    <div class="stat-card" id="card-pir">
+        <span class="stat-card__label">PIR Motion</span>
+        <span class="stat-card__value clear" id="val-pir">—</span>
+        <span class="stat-card__sub">Passive infrared</span>
+    </div>
+
+    <!-- Sound Level -->
+    <div class="stat-card" id="card-sound">
+        <span class="stat-card__label">Sound Level</span>
+        <span class="stat-card__value" id="val-sound">—</span>
+        <div class="bar-indicator"><div class="bar-indicator__fill" id="bar-sound" style="width:0%"></div></div>
+    </div>
+
+    <!-- Vibration -->
+    <div class="stat-card" id="card-vib">
+        <span class="stat-card__label">Vibration</span>
+        <span class="stat-card__value" id="val-vib">—</span>
+        <span class="stat-card__sub" id="val-vib-status">—</span>
+    </div>
+
+    <!-- Distance -->
+    <div class="stat-card" id="card-dist">
+        <span class="stat-card__label">Distance</span>
+        <span class="stat-card__value" id="val-dist">— <small style="font-size:.6em;color:var(--text-secondary)">cm</small></span>
+        <span class="stat-card__sub">Ultrasonic sensor</span>
+    </div>
+
+    <!-- Temperature -->
+    <div class="stat-card" id="card-temp">
+        <span class="stat-card__label">Temperature</span>
+        <span class="stat-card__value" id="val-temp">— <small style="font-size:.6em;color:var(--text-secondary)">°C</small></span>
+        <span class="stat-card__sub">Thermal sensor</span>
+    </div>
+
+    <!-- System Status -->
+    <div class="stat-card stat-card--system" id="card-system">
+        <span class="stat-card__label">System Status</span>
+        <span class="stat-card__value clear" id="val-system">🟢 AREA CLEAR</span>
+        <span class="stat-card__sub" id="val-triggered">0 / 5 sensors</span>
+    </div>
+</div>
+
+<!-- ========== SENSORS TRIGGERED PROGRESS BAR ========== -->
+<div class="trigger-bar">
+    <div class="trigger-bar__label">Sensors Triggered</div>
+    <div class="trigger-bar__track">
+        <div class="trigger-bar__fill level-0" id="trigger-fill" style="width:0%"></div>
+    </div>
+    <div class="trigger-bar__text" id="trigger-text">0 / 5 sensors active</div>
+</div>
+
+<!-- ========== CHART + RECENT EVENTS (side-by-side) ========== -->
+<div class="dashboard-row">
+    <!-- Live Line Chart -->
+    <div class="chart-container">
+        <h3>📈 Sensor Readings — Last 20</h3>
+        <div class="chart-wrap">
+            <canvas id="liveChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Recent Detection Events -->
+    <div class="events-panel">
+        <h3>🚨 Recent Events</h3>
+        <div id="events-list">
+            <div class="loading-spinner"><div class="spinner"></div> Loading…</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/**
+ * Live Dashboard Script
+ * - Fetches /api/live every 3 seconds
+ * - Updates stat cards, progress bar, and Chart.js line chart
+ * - Loads last 5 detection events from /api/events
+ */
+
+// ── Chart.js Setup ─────────────────────────────────────────────
+const MAX_POINTS = 20;
+const labels = [];
+const dataSets = {
+    sound:    [],
+    vib:      [],
+    distance: [],
+    temp:     [],
+};
+
+const ctx = document.getElementById('liveChart').getContext('2d');
+const liveChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [
+            {
+                label: 'Sound',
+                data: dataSets.sound,
+                borderColor: '#d97706',
+                backgroundColor: 'rgba(217,119,6,.1)',
+                tension: .35,
+                borderWidth: 2,
+                pointRadius: 2,
+                fill: true,
+                yAxisID: 'y',
+            },
+            {
+                label: 'Vibration',
+                data: dataSets.vib,
+                borderColor: '#7c3aed',
+                backgroundColor: 'rgba(124,58,237,.1)',
+                tension: .35,
+                borderWidth: 2,
+                pointRadius: 2,
+                fill: true,
+                yAxisID: 'y',
+            },
+            {
+                label: 'Distance (cm)',
+                data: dataSets.distance,
+                borderColor: '#06b6d4',
+                backgroundColor: 'rgba(6,182,212,.1)',
+                tension: .35,
+                borderWidth: 2,
+                pointRadius: 2,
+                fill: true,
+                yAxisID: 'y1',
+            },
+            {
+                label: 'Temperature (°C)',
+                data: dataSets.temp,
+                borderColor: '#16a34a',
+                backgroundColor: 'rgba(22,163,74,.1)',
+                tension: .35,
+                borderWidth: 2,
+                pointRadius: 2,
+                fill: true,
+                yAxisID: 'y1',
+            },
+        ],
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+        },
+        scales: {
+            x: { ticks: { color: '#64748b', maxTicksLimit: 10 }, grid: { color: 'rgba(30,42,74,.4)' } },
+            y: {
+                type: 'linear',
+                position: 'left',
+                title: { display: true, text: 'Sound / Vibration', color: '#94a3b8' },
+                ticks: { color: '#64748b' },
+                grid: { color: 'rgba(30,42,74,.4)' },
+            },
+            y1: {
+                type: 'linear',
+                position: 'right',
+                title: { display: true, text: 'Distance (cm) / Temp (°C)', color: '#94a3b8' },
+                ticks: { color: '#64748b' },
+                grid: { drawOnChartArea: false },
+            },
+        },
+    },
+});
+
+// ── Helper: format a Unix timestamp ────────────────────────────
+function fmtTime(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts * 1000);
+    return d.toLocaleTimeString();
+}
+
+function fmtDateTime(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts * 1000);
+    return d.toLocaleString();
+}
+
+// ── Update stat cards with latest reading ──────────────────────
+function updateCards(data) {
+    if (!data || Object.keys(data).length === 0) return;
+
+    // PIR
+    const pirEl = document.getElementById('val-pir');
+    if (data.pir) {
+        pirEl.textContent = 'DETECTED';
+        pirEl.className = 'stat-card__value detected';
+    } else {
+        pirEl.textContent = 'CLEAR';
+        pirEl.className = 'stat-card__value clear';
+    }
+
+    // Sound
+    const soundVal = data.sound_value || 0;
+    document.getElementById('val-sound').textContent = soundVal;
+    // Bar scales 0-4095 (ESP32 ADC range)
+    const soundPct = Math.min((soundVal / 4095) * 100, 100);
+    document.getElementById('bar-sound').style.width = soundPct + '%';
+
+    // Vibration
+    document.getElementById('val-vib').textContent = data.vib_value || 0;
+    const vibStatus = document.getElementById('val-vib-status');
+    if (data.vib_detected) {
+        vibStatus.textContent = 'DETECTED';
+        vibStatus.style.color = 'var(--accent-red)';
+    } else {
+        vibStatus.textContent = 'CLEAR';
+        vibStatus.style.color = 'var(--accent-green)';
+    }
+
+    // Distance
+    document.getElementById('val-dist').innerHTML =
+        (data.distance_cm != null ? data.distance_cm.toFixed(1) : '—') +
+        ' <small style="font-size:.6em;color:var(--text-secondary)">cm</small>';
+
+    // Temperature
+    document.getElementById('val-temp').innerHTML =
+        (data.temperature_c != null ? data.temperature_c.toFixed(1) : '—') +
+        ' <small style="font-size:.6em;color:var(--text-secondary)">°C</small>';
+
+    // System Status
+    const sysEl  = document.getElementById('val-system');
+    const sysCard = document.getElementById('card-system');
+    const trigSub = document.getElementById('val-triggered');
+    const triggered = data.sensors_triggered || 0;
+
+    if (data.system_active) {
+        sysEl.textContent = '🔴 ANIMAL DETECTED';
+        sysEl.className = 'stat-card__value detected';
+        sysCard.classList.add('danger');
+    } else {
+        sysEl.textContent = '🟢 AREA CLEAR';
+        sysEl.className = 'stat-card__value clear';
+        sysCard.classList.remove('danger');
+    }
+    trigSub.textContent = triggered + ' / 5 sensors';
+
+    // Sensors triggered progress bar
+    const fillEl = document.getElementById('trigger-fill');
+    fillEl.style.width = (triggered / 5 * 100) + '%';
+    fillEl.className = 'trigger-bar__fill level-' + triggered;
+    document.getElementById('trigger-text').textContent = triggered + ' / 5 sensors active';
+}
+
+// ── Push a new data point to the chart ─────────────────────────
+function pushChartData(data) {
+    if (!data || Object.keys(data).length === 0) return;
+
+    const timeLabel = fmtTime(data.timestamp);
+    labels.push(timeLabel);
+    dataSets.sound.push(data.sound_value || 0);
+    dataSets.vib.push(data.vib_value || 0);
+    dataSets.distance.push(data.distance_cm || 0);
+    dataSets.temp.push(data.temperature_c || 0);
+
+    // Keep only last MAX_POINTS
+    if (labels.length > MAX_POINTS) {
+        labels.shift();
+        dataSets.sound.shift();
+        dataSets.vib.shift();
+        dataSets.distance.shift();
+        dataSets.temp.shift();
+    }
+
+    liveChart.update();
+}
+
+// ── Fetch latest live reading ──────────────────────────────────
+function fetchLive() {
+    fetch('/api/live')
+        .then(r => r.json())
+        .then(data => {
+            updateCards(data);
+            pushChartData(data);
+        })
+        .catch(err => console.error('Live fetch error:', err));
+}
+
+// ── Load recent detection events ───────────────────────────────
+function loadEvents() {
+    fetch('/api/events')
+        .then(r => r.json())
+        .then(events => {
+            const container = document.getElementById('events-list');
+            if (!events || events.length === 0) {
+                container.innerHTML = '<div class="no-events">✅ No recent detections</div>';
+                return;
+            }
+            // Show last 5
+            const recent = events.slice(0, 5);
+            container.innerHTML = recent.map(ev => `
+                <div class="event-item">
+                    <span class="event-dot"></span>
+                    <span>Animal detected — ${ev.sensors_triggered || '?'}/5 sensors</span>
+                    <span class="event-time">${fmtDateTime(ev.timestamp)}</span>
+                </div>
+            `).join('');
+        })
+        .catch(() => {
+            document.getElementById('events-list').innerHTML =
+                '<div class="no-events">⚠ Could not load events</div>';
+        });
+}
+
+// ── Initialise ─────────────────────────────────────────────────
+fetchLive();
+loadEvents();
+setInterval(fetchLive, 3000);       // Poll every 3 seconds
+setInterval(loadEvents, 15000);     // Refresh events every 15 s
+</script>
+{% endblock %}
